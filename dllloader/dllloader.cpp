@@ -21,24 +21,38 @@ using NtOpenFile_pfunc = NTSTATUS(NTAPI*)
 
 NtOpenFile_pfunc NtOpenFile_origfunc;
 
-NTSTATUS WINAPI NtOpenFile_detour(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
-	PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions)
+//
+//	Gets accociated file handle for specific filename.
+//	If not hooked, then return 0.
+//
+HANDLE GetAccociatedHandle(POBJECT_ATTRIBUTES ObjectAttributes)
 {
-	if(g_dllmanager != nullptr && ObjectAttributes != nullptr)
+	if (g_dllmanager != nullptr && ObjectAttributes != nullptr)
 	{
 		wstring_view ntFileName(ObjectAttributes->ObjectName->Buffer, ObjectAttributes->ObjectName->Length / sizeof(wchar_t));
-		if(ntFileName.starts_with(L"\\??\\"))
+		if (ntFileName.starts_with(L"\\??\\"))
 		{
 			auto fileName = ntFileName.substr(4);
 			auto it = g_dllmanager->path2handle.find(fileName);
-			if(it != g_dllmanager->path2handle.end())
+			if (it != g_dllmanager->path2handle.end())
 			{
-				*FileHandle = it->second;
-				return 0;
+				return it->second;
 			}
 		}
 	}
-	
+
+	return 0;
+}
+
+NTSTATUS WINAPI NtOpenFile_detour(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+	PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions)
+{
+	HANDLE h = GetAccociatedHandle(ObjectAttributes);
+	if( h != 0 )
+	{
+		*FileHandle = h;
+		return STATUS_SUCCESS;
+	}
 	
 	NTSTATUS r = NtOpenFile_origfunc(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, ShareAccess, OpenOptions);
 	return r;
@@ -61,6 +75,30 @@ NTSTATUS NTAPI NtCreateSection_detour(PHANDLE SectionHandle, ACCESS_MASK Desired
 	}
 
 	return NtCreateSection_origfunc(SectionHandle, DesiredAccess, ObjectAttributes, MaximumSize, SectionPageProtection, AllocationAttributes, FileHandle);
+}
+
+//-------------------------------------------------------------------------------------------------------------
+using NtQueryAttributesFile_pfunc = NTSTATUS(NTAPI*)(POBJECT_ATTRIBUTES ObjectAttributes, PFILE_BASIC_INFORMATION FileInformation);
+
+NtQueryAttributesFile_pfunc  NtQueryAttributesFile_origfunc;
+
+NTSTATUS NTAPI NtQueryAttributesFile_detour(POBJECT_ATTRIBUTES ObjectAttributes, PFILE_BASIC_INFORMATION FileInformation)
+{
+	// Since .dll does not physically does not exists on disk - we need to intercept NtQueryAttributesFile
+	// so it would report like file does exists.
+	HANDLE h = GetAccociatedHandle(ObjectAttributes);
+	if (h != 0)
+	{
+		if(FileInformation)
+		{
+			*FileInformation = {0};		// Don't care about .dll date/timestamps (probably unused)
+			FileInformation->FileAttributes = FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_ARCHIVE;
+		}
+
+		return STATUS_SUCCESS;
+	}
+
+	return NtQueryAttributesFile_origfunc(ObjectAttributes, FileInformation);
 }
 
 //-------------------------------------------------------------------------------------------------------------
@@ -95,7 +133,6 @@ DllManager::~DllManager()
 
 	DisableDllRedirection();
 
-	//TODO: temporary files cleanup
 	auto kv = views::keys(handle2path);
 	vector<HANDLE> handles{ kv.begin(), kv.end() };
 
@@ -135,12 +172,14 @@ bool DllManager::EnableDllRedirection()
 	bool b = MhCall(MH_CreateHookApi(ntdll_dll, "NtOpenFile", &NtOpenFile_detour, (LPVOID*)&NtOpenFile_origfunc));
 	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtClose", &NtClose_detour, (LPVOID*)&NtClose_origfunc));
 	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtCreateSection", &NtCreateSection_detour, (LPVOID*)&NtCreateSection_origfunc));
-
+	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtQueryAttributesFile", &NtQueryAttributesFile_detour, (LPVOID*)&NtQueryAttributesFile_origfunc));
+	
 	if(b)
 	{
 		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(ntdll, "NtOpenFile")));
 		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(ntdll, "NtClose")));
 		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(ntdll, "NtCreateSection")));
+		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(ntdll, "NtQueryAttributesFile")));
 
 		if(!b)
 		{
@@ -183,16 +222,6 @@ bool DllManager::WinApiCall(bool cond)
 
 bool DllManager::SetDllFile(const wchar_t* path, const void* dll, int size)
 {
-	// Create dummy file, so can be found by LoadLibrary
-	if(!exists(path))
-	{
-		FILE* out = _wfopen(path, L"wb");
-		if(out)
-		{
-			fclose(out);
-		}
-	}
-
 	HANDLE hFile = transactionManager.CreateFileW(path, GENERIC_WRITE | GENERIC_READ, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 	if(!WinApiCall(hFile != 0))
 	{
