@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.15)
+
+project(dllloader)
+
+add_subdirectory(dllloader)
+add_subdirectory(test_dll)
+add_subdirectory(test_dllloader)
+

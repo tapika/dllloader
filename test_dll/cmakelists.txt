@@ -1,0 +1,5 @@
+
+add_library(test_dll SHARED test_dll.cpp)
+
+configPaths(test_dll)
+
