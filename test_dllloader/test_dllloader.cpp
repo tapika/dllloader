@@ -29,7 +29,7 @@ int wmain(int argc, wchar_t** argv)
     }
 
     DllManager dllm;
-    path dllFilePath = temp_directory_path() / L"test_dll.dll";
+    path dllFilePath = temp_directory_path() / L"new_test_dll.dll";     // Artificial name, does not need to match original dll name
 
     dllm.SetDllFile(dllFilePath.c_str(), &testDllFile[0], testDllFile.size());
 
