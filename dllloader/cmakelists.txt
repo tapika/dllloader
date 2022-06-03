@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 set(CMAKE_CXX_STANDARD 20)
+#set(CMAKE_CXX_STANDARD 17)
 add_definitions(-DUNICODE -D_UNICODE)
 
 function(configPaths project)
@@ -39,4 +40,9 @@ target_include_directories(dllloader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/minhook
 add_compile_definitions(dllloader DLLLOADER_EXPORT)
 
 configPaths(dllloader)
+
+if(MSVC)
+    # Report __cplusplus correctly by VS compiler
+    target_compile_options(dllloader PUBLIC "/Zc:__cplusplus")
+endif()
 

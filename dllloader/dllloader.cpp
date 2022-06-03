@@ -1,12 +1,10 @@
 #include "dllloader.h"
-#include <ranges>			//views::keys
 #include <filesystem>		//temp_directory_path
 #include "MinHook.h"
 #define _NTDLL_SELF_		//No need for ntdll.dll linkage
 #include "ntddk.h"
 #include <atlconv.h>		//CA2W
 #include <atlutil.h>		//AtlGetErrorDescription
-#include <format>
 
 using namespace ATL;
 using namespace std;
@@ -30,7 +28,11 @@ HANDLE GetAccociatedHandle(POBJECT_ATTRIBUTES ObjectAttributes)
 	if (g_dllmanager != nullptr && ObjectAttributes != nullptr)
 	{
 		wstring_view ntFileName(ObjectAttributes->ObjectName->Buffer, ObjectAttributes->ObjectName->Length / sizeof(wchar_t));
+#if __cplusplus >= 202002L
 		if (ntFileName.starts_with(L"\\??\\"))
+#else
+		if (ntFileName.rfind(L"\\??\\", 0) == 0)
+#endif
 		{
 			auto fileName = ntFileName.substr(4);
 			auto it = g_dllmanager->path2handle.find(fileName);
@@ -69,7 +71,13 @@ NtCreateSection_pfunc NtCreateSection_origfunc;
 NTSTATUS NTAPI NtCreateSection_detour(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
 	PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes, HANDLE FileHandle)
 {
-	if (g_dllmanager != nullptr && g_dllmanager->handle2path.contains(FileHandle))
+	if (g_dllmanager != nullptr &&
+#if __cplusplus >= 202002L
+		g_dllmanager->handle2path.contains(FileHandle)
+#else
+		g_dllmanager->handle2path.find(FileHandle) != g_dllmanager->handle2path.end()
+#endif
+	)
 	{
 		return NtCreateSection_origfunc(SectionHandle, DesiredAccess, ObjectAttributes, MaximumSize, PAGE_READONLY, AllocationAttributes, FileHandle);
 	}
@@ -108,7 +116,13 @@ NtClose_pfunc NtClose_origfunc;
 
 NTSTATUS NTAPI NtClose_detour(HANDLE Handle)
 {
-	if (g_dllmanager != nullptr && g_dllmanager->handle2path.contains(Handle))
+	if (g_dllmanager != nullptr &&
+#if __cplusplus >= 202002L
+		g_dllmanager->handle2path.contains(Handle)
+#else
+		g_dllmanager->handle2path.find(Handle) != g_dllmanager->handle2path.end()
+#endif
+		)
 	{
 		return 0;
 	}
@@ -133,10 +147,7 @@ DllManager::~DllManager()
 
 	DisableDllRedirection();
 
-	auto kv = views::keys(handle2path);
-	vector<HANDLE> handles{ kv.begin(), kv.end() };
-
-	for(auto h: handles)
+	for (auto const& [h, path] : handle2path)
 		CloseHandle(h);
 
 	handle2path.clear();
@@ -151,7 +162,7 @@ bool DllManager::MhCall(int r)
 	{
 		GetLastError = [r]() -> wstring
 		{
-			return format(L"MinHook error: {}", CA2W(MH_StatusToString((MH_STATUS)r)).operator LPWSTR());
+			return wstring(L"MinHook error: ") + CA2W(MH_StatusToString((MH_STATUS)r)).operator LPWSTR();
 		};
 		return false;
 	}
