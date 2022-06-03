@@ -5,6 +5,8 @@
 #include "ntddk.h"
 #include <atlconv.h>		//CA2W
 #include <atlutil.h>		//AtlGetErrorDescription
+#include <iostream>         //ifstream
+#include <fstream>
 
 using namespace ATL;
 using namespace std;
@@ -135,10 +137,15 @@ NTSTATUS NTAPI NtClose_detour(HANDLE Handle)
 
 
 DllManager::DllManager():
-    transactionManager(false, true)
+    transactionManager(false, true), hooksEnabled(false)
 {
 	GetLastError = []() -> wstring{ return L""; };
 	g_dllmanager = this;
+}
+
+bool DllManager::IsEnabled() const
+{
+	return hooksEnabled;
 }
 
 DllManager::~DllManager()
@@ -192,6 +199,7 @@ bool DllManager::EnableDllRedirection()
 		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(ntdll, "NtCreateSection")));
 		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(ntdll, "NtQueryAttributesFile")));
 
+		hooksEnabled = b;
 		if(!b)
 		{
 			DisableDllRedirection();
@@ -204,6 +212,7 @@ bool DllManager::EnableDllRedirection()
 void DllManager::DisableDllRedirection()
 {
 	HMODULE ntdll = GetModuleHandle(ntdll_dll);
+
 	MH_DisableHook((LPVOID)GetProcAddress(ntdll, "NtOpenFile"));
 	MH_DisableHook((LPVOID)GetProcAddress(ntdll, "NtClose"));
 	MH_DisableHook((LPVOID)GetProcAddress(ntdll, "NtCreateSection"));
@@ -223,13 +232,59 @@ bool DllManager::WinApiCall(bool cond)
 		GetLastError = [errorCode]() -> wstring
 		{
 			return AtlGetErrorDescription(HRESULT_FROM_WIN32(errorCode)).GetBuffer();
-
 		};
 		return false;
 	}
 
 	return true;
 }
+
+HMODULE DllManager::RamLoadLibrary(const wchar_t* dll_path)
+{
+	string dllBinary;
+
+	path currentPath(dll_path);
+	path newDllPath(temp_directory_path() / currentPath.filename());
+
+	if (!exists(dll_path))
+	{
+		GetLastError = [dll_path]() -> wstring
+		{
+			return wstring(L"Dll does not exists: ") + dll_path;
+		};
+		return 0;
+	}
+
+	ifstream is;
+	is.exceptions(is.exceptions() | std::ios::failbit);   //throw exception on failure
+
+	try {
+		is.open(dll_path, ios::binary);
+		is.seekg(0, ios::end);
+		int size = is.tellg();
+		is.seekg(0, ios::beg);
+		dllBinary.resize(size);
+		is.read(&dllBinary[0], size);
+		is.close();
+	}
+	catch (ios_base::failure& e)
+	{
+		wstring what(CA2W(e.what()));
+		GetLastError = [what]() -> wstring
+		{
+			return what;
+		};
+		return 0;
+	}
+
+	if (!SetDllFile(newDllPath.c_str(), &dllBinary[0], dllBinary.size()))
+	{
+		return 0;
+	}
+
+	return LoadLibrary(newDllPath.c_str());
+}
+
 
 bool DllManager::SetDllFile(const wchar_t* path, const void* dll, int size)
 {

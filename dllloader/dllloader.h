@@ -19,10 +19,16 @@ public:
     DllManager();
     ~DllManager();
 
+    bool IsEnabled() const;
+
     bool EnableDllRedirection();
     void DisableDllRedirection();
 
     std::function<std::wstring()> GetLastError;
+
+    // Same as LoadLibrary, except loads .dll into ram avoiding lock to file.
+    // returns 0 if failure, DllManager::GetLastError() can be used to retrieve error message.
+    HMODULE RamLoadLibrary(const wchar_t* path);
 
     /// Sets dll contents for specific path
     bool SetDllFile(const wchar_t* path, const void* dll, int size);
@@ -37,6 +43,7 @@ public:
 
 private:
     bool MhCall(int r);
+    bool hooksEnabled;
 };
 
 
