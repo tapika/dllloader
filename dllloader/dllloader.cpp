@@ -56,13 +56,13 @@ NTSTATUS WINAPI NtOpenFile_detour(PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
 	HANDLE h = GetAccociatedHandle(ObjectAttributes);
 	if( h != 0)
 	{
-		if ((DesiredAccess & READ_CONTROL) == 0)
+		//if ((DesiredAccess & READ_CONTROL) == 0)
 		{
 			*FileHandle = h;
 			return STATUS_SUCCESS;
 		}
 
-		*FileHandle = g_file2;
+		//*FileHandle = g_file2;
 		return STATUS_SUCCESS;
 	}
 	

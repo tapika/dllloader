@@ -33,8 +33,8 @@ int wmain(int argc, wchar_t** argv)
 #ifdef DLLREDIRECT
 #else
 #endif
-    //path dllFilePath = temp_directory_path() / L"new_test_dll.dll";     // Artificial name, does not need to match original dll name
-    path dllFilePath = baseDir / L"test_dll.dll";
+    path dllFilePath = temp_directory_path() / L"new_test_dll.dll";     // Artificial name, does not need to match original dll name
+    //path dllFilePath = baseDir / L"test_dll.dll";
 
 //#ifdef DLLREDIRECT
     dllm.SetDllFile(dllFilePath.c_str(), &testDllFile[0], testDllFile.size());
