@@ -48,13 +48,21 @@ HANDLE GetAccociatedHandle(POBJECT_ATTRIBUTES ObjectAttributes)
 	return 0;
 }
 
+HANDLE g_file2 = (HANDLE)0xFFFFFFFF;
+
 NTSTATUS WINAPI NtOpenFile_detour(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
 	PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions)
 {
 	HANDLE h = GetAccociatedHandle(ObjectAttributes);
-	if( h != 0 )
+	if( h != 0)
 	{
-		*FileHandle = h;
+		if ((DesiredAccess & READ_CONTROL) == 0)
+		{
+			*FileHandle = h;
+			return STATUS_SUCCESS;
+		}
+
+		*FileHandle = g_file2;
 		return STATUS_SUCCESS;
 	}
 	
@@ -75,13 +83,14 @@ NTSTATUS NTAPI NtCreateSection_detour(PHANDLE SectionHandle, ACCESS_MASK Desired
 {
 	if (g_dllmanager != nullptr &&
 #if __cplusplus >= 202002L
-		g_dllmanager->handle2path.contains(FileHandle)
+		g_dllmanager->handle2path.contains(FileHandle) || FileHandle == g_file2
 #else
 		g_dllmanager->handle2path.find(FileHandle) != g_dllmanager->handle2path.end()
 #endif
 	)
 	{
 		return NtCreateSection_origfunc(SectionHandle, DesiredAccess, ObjectAttributes, MaximumSize, PAGE_READONLY, AllocationAttributes, FileHandle);
+		//return NtCreateSection_origfunc(SectionHandle, DesiredAccess, ObjectAttributes, MaximumSize, SectionPageProtection, AllocationAttributes, FileHandle);
 	}
 
 	return NtCreateSection_origfunc(SectionHandle, DesiredAccess, ObjectAttributes, MaximumSize, SectionPageProtection, AllocationAttributes, FileHandle);
@@ -187,7 +196,8 @@ bool DllManager::EnableDllRedirection()
 		return false;
 	}
 
-	bool b = MhCall(MH_CreateHookApi(ntdll_dll, "NtOpenFile", &NtOpenFile_detour, (LPVOID*)&NtOpenFile_origfunc));
+	bool b = true;
+	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtOpenFile", &NtOpenFile_detour, (LPVOID*)&NtOpenFile_origfunc));
 	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtClose", &NtClose_detour, (LPVOID*)&NtClose_origfunc));
 	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtCreateSection", &NtCreateSection_detour, (LPVOID*)&NtCreateSection_origfunc));
 	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtQueryAttributesFile", &NtQueryAttributesFile_detour, (LPVOID*)&NtQueryAttributesFile_origfunc));
@@ -288,11 +298,19 @@ HMODULE DllManager::RamLoadLibrary(const wchar_t* dll_path)
 
 bool DllManager::SetDllFile(const wchar_t* path, const void* dll, int size)
 {
-	HANDLE hFile = transactionManager.CreateFileW(path, GENERIC_WRITE | GENERIC_READ, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+	//HANDLE hFile = transactionManager.CreateFileW(path, GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+	HANDLE hFile = transactionManager.CreateFileW(path, GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 	if(!WinApiCall(hFile != 0))
 	{
 		return false;	
 	}
+
+	//HANDLE hFile2 = transactionManager.CreateFileW(path, GENERIC_READ | READ_CONTROL| FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, 0);
+	//if (!WinApiCall(hFile2 != 0))
+	//{
+	//	return false;
+	//}
+	//g_file2 = hFile2;
 
 	DWORD written = 0;
 	bool b = WinApiCall(WriteFile(hFile, dll, size, &written, NULL));

@@ -29,8 +29,14 @@ int wmain(int argc, wchar_t** argv)
     }
 
     DllManager dllm;
-    path dllFilePath = temp_directory_path() / L"new_test_dll.dll";     // Artificial name, does not need to match original dll name
+//#define DLLREDIRECT
+#ifdef DLLREDIRECT
+#else
+#endif
+    //path dllFilePath = temp_directory_path() / L"new_test_dll.dll";     // Artificial name, does not need to match original dll name
+    path dllFilePath = baseDir / L"test_dll.dll";
 
+//#ifdef DLLREDIRECT
     dllm.SetDllFile(dllFilePath.c_str(), &testDllFile[0], testDllFile.size());
 
     if( !dllm.EnableDllRedirection() )
@@ -38,6 +44,7 @@ int wmain(int argc, wchar_t** argv)
         wprintf(L"%s\n", dllm.GetLastError().c_str());
         return -2;
     }
+//#endif
 
     // Same as LoadLibrary, only with error handling
     HMODULE dll = dllm.LoadLibrary(dllFilePath.c_str());

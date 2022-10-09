@@ -3,9 +3,11 @@
 
 extern "C" __declspec(dllexport) void HelloWorld()
 {
-    printf("Hello world !\r\n");
+    //printf("Hello world !\r\n");
+    System::Windows::Forms::MessageBox::Show("Message");
 }
 
+#pragma unmanaged
 BOOL WINAPI DllMain( HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved)
 {
     switch (fdwReason)
