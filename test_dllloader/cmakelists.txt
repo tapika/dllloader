@@ -8,8 +8,9 @@ target_link_libraries(test_dllloader dllloader)
 
 target_compile_options(test_dllloader PRIVATE /clr)
 target_compile_options(test_dllloader PRIVATE /Zc:twoPhase-)
-set_property(TARGET test_dllloader PROPERTY VS_GLOBAL_CLRSupport "true")
+#set_property(TARGET test_dllloader PROPERTY VS_GLOBAL_CLRSupport "true")
 set_property(TARGET test_dllloader PROPERTY VS_DOTNET_TARGET_FRAMEWORK_VERSION "v4.8")
+target_link_options(test_dllloader PUBLIC /DEBUG /ASSEMBLYDEBUG)
 
 #target_compile_features(test_dllloader PRIVATE cxx_std_17)
 
