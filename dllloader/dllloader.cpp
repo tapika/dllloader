@@ -71,6 +71,69 @@ NTSTATUS WINAPI NtOpenFile_detour(PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
 }
 
 //-------------------------------------------------------------------------------------------------------------
+using CreateFileW_pfunc = HANDLE (WINAPI*) (
+	LPCWSTR lpFileName,
+	DWORD dwDesiredAccess,
+	DWORD dwShareMode,
+	LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+	DWORD dwCreationDisposition,
+	DWORD dwFlagsAndAttributes,
+	HANDLE hTemplateFile
+);
+
+CreateFileW_pfunc CreateFileW_origfunc;
+
+
+HANDLE  WINAPI CreateFileW_detour(
+	LPCWSTR lpFileName,
+	DWORD dwDesiredAccess,
+	DWORD dwShareMode,
+	LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+	DWORD dwCreationDisposition,
+	DWORD dwFlagsAndAttributes,
+	HANDLE hTemplateFile
+)
+{
+	if (lpFileName != nullptr)
+	{
+		auto it = g_dllmanager->path2handle.find(lpFileName);
+		if (it != g_dllmanager->path2handle.end())
+		{
+			HANDLE hFile = g_dllmanager->transactionManager.CreateFileW(lpFileName, 
+				dwDesiredAccess, FILE_SHARE_READ | FILE_SHARE_WRITE,
+				//GENERIC_READ | READ_CONTROL| FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+				//dwDesiredAccess, dwShareMode,
+				nullptr, dwCreationDisposition, 0, 0);
+			//return it->second;
+			return hFile;
+		}
+	}
+
+	auto r = CreateFileW_origfunc(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+	return r;
+}
+
+//-------------------------------------------------------------------------------------------------------------
+using GetFileAttributesExW_func = BOOL(WINAPI*)(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, LPVOID lpFileInformation );
+
+GetFileAttributesExW_func GetFileAttributesExW_origfunc;
+
+BOOL WINAPI GetFileAttributesExW_detour(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, LPVOID lpFileInformation)
+{
+	BOOL r;
+	
+	auto it = g_dllmanager->path2handle.find(lpFileName);
+	if (it != g_dllmanager->path2handle.end())
+	{
+		r = g_dllmanager->transactionManager.GetFileAttributesExW(lpFileName, fInfoLevelId, lpFileInformation);
+		return r;
+	}
+
+	r = GetFileAttributesExW_origfunc(lpFileName, fInfoLevelId, lpFileInformation);
+	return r;
+}
+
+//-------------------------------------------------------------------------------------------------------------
 
 using NtCreateSection_pfunc = NTSTATUS(NTAPI*)
 (PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
@@ -187,10 +250,12 @@ bool DllManager::MhCall(int r)
 }
 
 const wchar_t* ntdll_dll = L"ntdll.dll";
+const wchar_t* kernel32dll_dll = L"kernel32.dll";
 
 bool DllManager::EnableDllRedirection()
 {
 	HMODULE ntdll = GetModuleHandle(ntdll_dll);
+	HMODULE kernel32dll = GetModuleHandle(kernel32dll_dll);
 	if(!MhCall(MH_Initialize()))
 	{
 		return false;
@@ -201,6 +266,8 @@ bool DllManager::EnableDllRedirection()
 	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtClose", &NtClose_detour, (LPVOID*)&NtClose_origfunc));
 	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtCreateSection", &NtCreateSection_detour, (LPVOID*)&NtCreateSection_origfunc));
 	b &= MhCall(MH_CreateHookApi(ntdll_dll, "NtQueryAttributesFile", &NtQueryAttributesFile_detour, (LPVOID*)&NtQueryAttributesFile_origfunc));
+	b &= MhCall(MH_CreateHookApi(kernel32dll_dll, "CreateFileW", &CreateFileW_detour, (LPVOID*)&CreateFileW_origfunc));
+	b &= MhCall(MH_CreateHookApi(kernel32dll_dll, "GetFileAttributesExW", &GetFileAttributesExW_detour, (LPVOID*)&GetFileAttributesExW_origfunc));
 	
 	if(b)
 	{
@@ -208,6 +275,8 @@ bool DllManager::EnableDllRedirection()
 		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(ntdll, "NtClose")));
 		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(ntdll, "NtCreateSection")));
 		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(ntdll, "NtQueryAttributesFile")));
+		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(kernel32dll, "CreateFileW")));
+		b &= MhCall(MH_EnableHook((LPVOID)GetProcAddress(kernel32dll, "GetFileAttributesExW")));
 
 		hooksEnabled = b;
 		if(!b)
