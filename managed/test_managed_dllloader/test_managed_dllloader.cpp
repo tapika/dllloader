@@ -1,5 +1,6 @@
 #include "dllloader.h"
 #include <iostream>         //ifstream
+#include <conio.h>
 #include <fstream>
 #include <filesystem>       //weakly_canonical, path
 
@@ -29,9 +30,10 @@ int wmain(int argc, wchar_t** argv)
     }
 
     DllManager dllm;
-    path dllFilePath = temp_directory_path() / L"new_test_dll.dll";     // Artificial name, does not need to match original dll name
+    path dllFilePath = baseDir / L"test_managed_dll_new.dll";     // Artificial name, does not need to match original dll name
+    path dllOrigFilePath = baseDir / L"test_managed_dll.dll";      // Official assembly name
 
-    dllm.SetDllFile(dllFilePath.c_str(), &testDllFile[0], testDllFile.size());
+    dllm.SetDllFile(dllOrigFilePath.c_str(), dllFilePath.c_str(), &testDllFile[0], testDllFile.size());
 
     if( !dllm.EnableDllRedirection() )
     {
@@ -61,6 +63,7 @@ int wmain(int argc, wchar_t** argv)
 
 
     FreeLibrary(dll);
+    _getch();
 
     return 0;
 }

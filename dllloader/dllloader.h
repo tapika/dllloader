@@ -30,13 +30,22 @@ public:
     // returns 0 if failure, DllManager::GetLastError() can be used to retrieve error message.
     HMODULE RamLoadLibrary(const wchar_t* path);
 
+    /// <summary>
     /// Sets dll contents for specific path
-    bool SetDllFile(const wchar_t* path, const void* dll, int size);
+    /// </summary>
+    /// <param name="origpath">origpath is used only by managed dll - since .dll itself contains assembly name.
+    /// origpath will be redirected to path instead. use nullptr for native .dll's
+    /// </param>
+    /// <param name="path">.dll path to fake</param>
+    /// <param name="dll">dll binary itself</param>
+    /// <param name="size">dll size</param>
+    bool SetDllFile(const wchar_t* origpath,const wchar_t* path, const void* dll, int size);
     
     HMODULE LoadLibrary(const wchar_t* path);
 
     ATL::CAtlTransactionManager transactionManager;
     std::map<std::wstring, HANDLE, std::less<> > path2handle;
+    std::map<std::wstring,std::wstring, std::less<> > path2path;
     std::map<HANDLE, std::wstring> handle2path;
 
     bool WinApiCall(bool cond);

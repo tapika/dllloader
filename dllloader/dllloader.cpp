@@ -80,7 +80,7 @@ HANDLE  WINAPI CreateFileW_detour(
 	{
 		if (g_dllmanager->path2handle.find(lpFileName) != g_dllmanager->path2handle.end())
 		{
-			h = g_dllmanager->transactionManager.CreateFileW(lpFileName, dwDesiredAccess, FILE_SHARE_READ | FILE_SHARE_WRITE,
+			h = g_dllmanager->transactionManager.CreateFileW(g_dllmanager->path2path[lpFileName].c_str(), dwDesiredAccess, FILE_SHARE_READ | FILE_SHARE_WRITE,
 				lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 			return h;
 		}
@@ -101,7 +101,7 @@ BOOL WINAPI GetFileAttributesExW_detour(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVE
 	
 	if (g_dllmanager != nullptr && g_dllmanager->path2handle.find(lpFileName) != g_dllmanager->path2handle.end())
 	{
-		r = g_dllmanager->transactionManager.GetFileAttributesExW(lpFileName, fInfoLevelId, lpFileInformation);
+		r = g_dllmanager->transactionManager.GetFileAttributesExW(g_dllmanager->path2path[lpFileName].c_str(), fInfoLevelId, lpFileInformation);
 		return r;
 	}
 
@@ -335,7 +335,7 @@ HMODULE DllManager::RamLoadLibrary(const wchar_t* dll_path)
 		return 0;
 	}
 
-	if (!SetDllFile(newDllPath.c_str(), &dllBinary[0], dllBinary.size()))
+	if (!SetDllFile(nullptr,newDllPath.c_str(), &dllBinary[0], dllBinary.size()))
 	{
 		return 0;
 	}
@@ -344,9 +344,9 @@ HMODULE DllManager::RamLoadLibrary(const wchar_t* dll_path)
 }
 
 
-bool DllManager::SetDllFile(const wchar_t* path, const void* dll, int size)
+bool DllManager::SetDllFile(const wchar_t* origpath, const wchar_t* newpath, const void* dll, int size)
 {
-	HANDLE hFile = transactionManager.CreateFileW(path, GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+	HANDLE hFile = transactionManager.CreateFileW(newpath, GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 	if(!WinApiCall(hFile != 0))
 	{
 		return false;	
@@ -358,13 +358,19 @@ bool DllManager::SetDllFile(const wchar_t* path, const void* dll, int size)
 	b &= WinApiCall(SetFilePointer(hFile, 0, 0, FILE_BEGIN) != INVALID_SET_FILE_POINTER);
 	if(b)
 	{
-		handle2path[hFile] = path;
-		path2handle[path] = hFile;
+		handle2path[hFile] = newpath;
+		path2handle[newpath] = hFile;
+		path2path[newpath] = newpath;
+		if (origpath != nullptr)
+		{
+			path2handle[origpath] = hFile;
+			path2path[origpath] = newpath;
+		}
 	}
 	else
 	{
 		CloseHandle(hFile);
-		transactionManager.DeleteFileW(path);
+		transactionManager.DeleteFileW(newpath);
 	}
 
 	return true;
