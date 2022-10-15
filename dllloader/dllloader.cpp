@@ -14,6 +14,8 @@ using namespace std::filesystem;
 
 static DllManager* g_dllmanager = nullptr;
 
+// detour function debugging does not always work in mixed mode, use native debug mode instead
+
 //-------------------------------------------------------------------------------------------------------------
 using NtOpenFile_pfunc = NTSTATUS(NTAPI*)
 	(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, 
@@ -85,6 +87,12 @@ HANDLE  WINAPI CreateFileW_detour(
 			return h;
 		}
 	}
+
+	// detour function debugging does not always work in mixed mode, use native debug mode instead
+	//if (std::wstring_view(lpFileName).ends_with(L".pdb"))
+	//{
+	//	MessageBoxA(0, "stop", "info", 0);
+	//}
 
 	h = CreateFileW_origfunc(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 	return h;

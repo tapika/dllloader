@@ -7,33 +7,59 @@
 using namespace std;
 using namespace std::filesystem;
 
-int wmain(int argc, wchar_t** argv)
-{
-    path baseDir = weakly_canonical(path(argv[0])).parent_path();
 
+bool LoadFile(path file, string& fileContents)
+{
     ifstream is;
     is.exceptions(is.exceptions() | std::ios::failbit);   //throw exception on failure
-    string testDllFile;
 
     try {
-        is.open(baseDir / L"test_managed_dll.dll", ios::binary);
+        is.open(file, ios::binary);
         is.seekg(0, ios::end);
         int size = is.tellg();
         is.seekg(0, ios::beg);
-        testDllFile.resize(size);
-        is.read(&testDllFile[0], size);
+        fileContents.resize(size);
+        is.read(&fileContents[0], size);
         is.close();
     }
     catch (ios_base::failure& e)
     {
         std::cerr << e.what() << '\n';
+        return false;
     }
 
+    return true;
+}
+
+
+int wmain(int argc, wchar_t** argv)
+{
+    path baseDir = weakly_canonical(path(argv[0])).parent_path();
+
+    string testDllFile;
+    string testPdbFile;
+    path pdbFilePath = baseDir / L"test_managed_dll_new.pdb";       // redirected debug symbols path
+    path pdbOrigFilePath = baseDir / L"test_managed_dll.pdb";       // official debug symbols path
+
+    if (!LoadFile(baseDir / L"test_managed_dll.dll", testDllFile) )
+    {
+        return -2;
+    }
+
+    LoadFile(pdbOrigFilePath, testPdbFile);
+
+    //printf(".dll loaded, any key...");
+    //_getch();
+
     DllManager dllm;
-    path dllFilePath = baseDir / L"test_managed_dll_new.dll";     // Artificial name, does not need to match original dll name
-    path dllOrigFilePath = baseDir / L"test_managed_dll.dll";      // Official assembly name
+    path dllFilePath = baseDir / L"test_managed_dll_new.dll";       // redirected assembly path
+    path dllOrigFilePath = baseDir / L"test_managed_dll.dll";       // official assembly path
 
     dllm.SetDllFile(dllOrigFilePath.c_str(), dllFilePath.c_str(), &testDllFile[0], testDllFile.size());
+    if (testPdbFile.length())
+    {
+        dllm.SetDllFile(pdbOrigFilePath.c_str(), pdbFilePath.c_str(), &testPdbFile[0], testPdbFile.size());
+    }
 
     if( !dllm.EnableDllRedirection() )
     {
